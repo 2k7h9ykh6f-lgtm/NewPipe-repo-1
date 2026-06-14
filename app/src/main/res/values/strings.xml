@@ -243,6 +243,9 @@
     <string name="player_stream_failure">Could not play this stream</string>
     <string name="player_unrecoverable_failure">Unrecoverable player error occurred</string>
     <string name="player_recoverable_failure">Recovering from player error</string>
+    <string name="error_source_media_parsing">Media parsing error</string>
+    <string name="error_source_network">Network error</string>
+    <string name="error_source_player_initialization">Player initialization error</string>
     <string name="external_player_unsupported_link_type">External players don\'t support these types of links</string>
     <string name="video_streams_empty">No video streams found</string>
     <string name="audio_streams_empty">No audio streams found</string>

@@ -115,6 +115,13 @@ class ErrorUtil {
          */
         @JvmStatic
         fun createNotification(context: Context, errorInfo: ErrorInfo) {
+            val sourceLabel = errorInfo.getSourceLabel(context)
+            val contentText = if (sourceLabel != null) {
+                "$sourceLabel — ${errorInfo.getMessage(context)}"
+            } else {
+                errorInfo.getMessage(context)
+            }
+
             val notificationBuilder: NotificationCompat.Builder =
                 NotificationCompat.Builder(
                     context,
@@ -122,7 +129,7 @@ class ErrorUtil {
                 )
                     .setSmallIcon(R.drawable.ic_bug_report)
                     .setContentTitle(context.getString(R.string.error_report_notification_title))
-                    .setContentText(errorInfo.getMessage(context))
+                    .setContentText(contentText)
                     .setAutoCancel(true)
                     .setContentIntent(
                         PendingIntentCompat.getActivity(
@@ -159,7 +166,13 @@ class ErrorUtil {
                 // fallback to showing a notification if no root view is available
                 createNotification(context, errorInfo)
             } else {
-                Snackbar.make(rootView, errorInfo.getMessage(context), Snackbar.LENGTH_LONG)
+                val sourceLabel = errorInfo.getSourceLabel(context)
+                val text = if (sourceLabel != null) {
+                    "$sourceLabel — ${errorInfo.getMessage(context)}"
+                } else {
+                    errorInfo.getMessage(context)
+                }
+                Snackbar.make(rootView, text, Snackbar.LENGTH_LONG)
                     .setActionTextColor(Color.YELLOW)
                     .setAction(context.getString(R.string.error_snackbar_action).uppercase()) {
                         context.startActivity(getErrorActivityIntent(context, errorInfo))

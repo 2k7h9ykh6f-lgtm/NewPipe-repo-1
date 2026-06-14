@@ -5,6 +5,7 @@ import android.os.Parcelable
 import androidx.annotation.StringRes
 import androidx.core.content.ContextCompat
 import com.google.android.exoplayer2.ExoPlaybackException
+import com.google.android.exoplayer2.PlaybackException
 import com.google.android.exoplayer2.upstream.HttpDataSource
 import com.google.android.exoplayer2.upstream.Loader
 import java.net.UnknownHostException
@@ -60,7 +61,13 @@ class ErrorInfo private constructor(
      * If present, this resource can alternatively be opened in browser (useful if NewPipe is
      * badly broken).
      */
-    val openInBrowserUrl: String?
+    val openInBrowserUrl: String?,
+    /**
+     * If present, categorizes the root cause of a playback failure
+     * (media parsing, network, or player initialization). `null` for
+     * non-playback errors where the category is not applicable.
+     */
+    val errorSource: PlaybackErrorSource? = null
 ) : Parcelable {
 
     @JvmOverloads
@@ -69,7 +76,8 @@ class ErrorInfo private constructor(
         userAction: UserAction,
         request: String,
         serviceId: Int? = null,
-        openInBrowserUrl: String? = null
+        openInBrowserUrl: String? = null,
+        errorSource: PlaybackErrorSource? = null
     ) : this(
         throwableToStringList(throwable),
         userAction,
@@ -79,7 +87,8 @@ class ErrorInfo private constructor(
         isReportable(throwable),
         isRetryable(throwable),
         (throwable as? ReCaptchaException)?.url,
-        openInBrowserUrl
+        openInBrowserUrl,
+        errorSource
     )
 
     @JvmOverloads
@@ -88,7 +97,8 @@ class ErrorInfo private constructor(
         userAction: UserAction,
         request: String,
         serviceId: Int? = null,
-        openInBrowserUrl: String? = null
+        openInBrowserUrl: String? = null,
+        errorSource: PlaybackErrorSource? = null
     ) : this(
         throwableListToStringList(throwables),
         userAction,
@@ -98,7 +108,8 @@ class ErrorInfo private constructor(
         throwables.any(::isReportable),
         throwables.isEmpty() || throwables.any(::isRetryable),
         throwables.firstNotNullOfOrNull { it as? ReCaptchaException }?.url,
-        openInBrowserUrl
+        openInBrowserUrl,
+        errorSource
     )
 
     // constructor to manually build ErrorInfo when no throwable is available
@@ -138,6 +149,14 @@ class ErrorInfo private constructor(
 
     fun getMessage(context: Context): CharSequence {
         return message.getText(context)
+    }
+
+    /**
+     * Returns the human-readable label for [errorSource], or `null` if no
+     * error source was set (i.e. for non-playback errors).
+     */
+    fun getSourceLabel(context: Context): String? {
+        return errorSource?.let { context.getString(it.labelRes) }
     }
 
     companion object {
@@ -358,6 +377,108 @@ class ErrorInfo private constructor(
                 is YoutubeMusicPremiumContentException -> true
 
                 else -> false
+            }
+        }
+
+        /**
+         * Classifies a throwable into a [PlaybackErrorSource] category so that
+         * the user-facing error message can indicate the root cause of a
+         * playback failure (media parsing, network, or player initialization).
+         *
+         * This function intentionally does not depend on any extractor types
+         * beyond [ExtractionException], which is already used by [getMessage].
+         *
+         * @param throwable the exception that caused the playback failure
+         * @return the categorised error source
+         */
+        @JvmStatic
+        fun classify(throwable: Throwable?): PlaybackErrorSource {
+            if (throwable == null) {
+                return PlaybackErrorSource.PLAYER_INITIALIZATION
+            }
+
+            // ExoPlayer playback exceptions — use type and error code
+            if (throwable is ExoPlaybackException) {
+                return when {
+                    throwable.type == ExoPlaybackException.TYPE_RENDERER ->
+                        PlaybackErrorSource.PLAYER_INITIALIZATION
+
+                    throwable.type == ExoPlaybackException.TYPE_UNEXPECTED ->
+                        PlaybackErrorSource.PLAYER_INITIALIZATION
+
+                    throwable.cause is HttpDataSource.InvalidResponseCodeException ->
+                        PlaybackErrorSource.NETWORK
+
+                    throwable.type == ExoPlaybackException.TYPE_SOURCE
+                            && throwable.cause != null
+                            && throwable.cause!!.isNetworkRelated ->
+                        PlaybackErrorSource.NETWORK
+
+                    throwable.type == ExoPlaybackException.TYPE_SOURCE ->
+                        PlaybackErrorSource.MEDIA_PARSING
+
+                    // Fall back to error-code based classification for any
+                    // ExoPlaybackException not covered above.
+                    else -> classifyByErrorCode(throwable.errorCode)
+                }
+            }
+
+            // FailedMediaSource wrappers — unwrap and classify the cause
+            if (throwable is FailedMediaSource.MediaSourceResolutionException
+                || throwable is FailedMediaSource.StreamInfoLoadException) {
+                return PlaybackErrorSource.MEDIA_PARSING
+            }
+            if (throwable is FailedMediaSource.FailedMediaSourceException) {
+                return classify(throwable.cause)
+            }
+
+            // Resolver failure — the stream could not be turned into a MediaSource
+            if (throwable is PlaybackResolver.ResolverException) {
+                return PlaybackErrorSource.MEDIA_PARSING
+            }
+
+            // Generic network check (covers IOException subtypes)
+            if (throwable.isNetworkRelated) {
+                return PlaybackErrorSource.NETWORK
+            }
+
+            // Non-network extraction errors are parsing failures
+            if (throwable is ExtractionException) {
+                return PlaybackErrorSource.MEDIA_PARSING
+            }
+
+            return PlaybackErrorSource.PLAYER_INITIALIZATION
+        }
+
+        /**
+         * Maps ExoPlayer [PlaybackException] error codes to an error source.
+         */
+        private fun classifyByErrorCode(errorCode: Int): PlaybackErrorSource {
+            return when (errorCode) {
+                // Network / timeout errors
+                PlaybackException.ERROR_CODE_TIMEOUT,
+                PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+                PlaybackException.ERROR_CODE_UNSPECIFIED ->
+                    PlaybackErrorSource.NETWORK
+
+                // Parsing / source format errors
+                PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE,
+                PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+                PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+                PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
+                PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED,
+                PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
+                PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+                PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+                PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+                PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED ->
+                    PlaybackErrorSource.MEDIA_PARSING
+
+                // Everything else (decoder, renderer, remote, API) is a
+                // player-internal failure.
+                else -> PlaybackErrorSource.PLAYER_INITIALIZATION
             }
         }
     }

@@ -87,6 +87,7 @@ import org.schabi.newpipe.R;
 import org.schabi.newpipe.databinding.PlayerBinding;
 import org.schabi.newpipe.error.ErrorInfo;
 import org.schabi.newpipe.error.ErrorUtil;
+import org.schabi.newpipe.error.PlaybackErrorSource;
 import org.schabi.newpipe.error.UserAction;
 import org.schabi.newpipe.extractor.Image;
 import org.schabi.newpipe.extractor.stream.AudioStream;
@@ -446,7 +447,8 @@ public final class Player implements PlaybackListener, Listener {
                             // otherwise it will resort to showing a notification, so we are safe
                             // here.
                             final var info = new ErrorInfo(throwable, UserAction.PLAY_ON_POPUP,
-                                    data.getUrl(), null, data.getUrl());
+                                    data.getUrl(), null, data.getUrl(),
+                                    ErrorInfo.classify(throwable));
                             ErrorUtil.createNotification(context, info);
                         }));
                 return;
@@ -1375,13 +1377,16 @@ public final class Player implements PlaybackListener, Listener {
 
             if (!currentMetadata.getErrors().isEmpty()) {
                 // new errors might have been added even if previousInfo == tag.getMaybeStreamInfo()
+                final PlaybackErrorSource source = ErrorInfo.classify(
+                        currentMetadata.getErrors().get(0));
                 final ErrorInfo errorInfo = new ErrorInfo(
                         currentMetadata.getErrors(),
                         UserAction.PLAY_STREAM,
                         "Loading failed for [" + currentMetadata.getTitle()
                                 + "]: " + currentMetadata.getStreamUrl(),
                         currentMetadata.getServiceId(),
-                        currentMetadata.getStreamUrl());
+                        currentMetadata.getStreamUrl(),
+                        source);
                 ErrorUtil.createNotification(context, errorInfo);
             }
 
@@ -1588,16 +1593,18 @@ public final class Player implements PlaybackListener, Listener {
     }
 
     private void createErrorNotification(@NonNull final PlaybackException error) {
+        final PlaybackErrorSource source = ErrorInfo.classify(error);
         final ErrorInfo errorInfo;
         if (currentMetadata == null) {
             errorInfo = new ErrorInfo(error, UserAction.PLAY_STREAM,
                     "Player error[type=" + error.getErrorCodeName()
-                            + "] occurred, currentMetadata is null");
+                            + "] occurred, currentMetadata is null",
+                    null, null, source);
         } else {
             errorInfo = new ErrorInfo(error, UserAction.PLAY_STREAM,
                     "Player error[type=" + error.getErrorCodeName()
                             + "] occurred while playing " + currentMetadata.getStreamUrl(),
-                    currentMetadata.getServiceId(), currentMetadata.getStreamUrl());
+                    currentMetadata.getServiceId(), currentMetadata.getStreamUrl(), source);
         }
         ErrorUtil.createNotification(context, errorInfo);
     }
