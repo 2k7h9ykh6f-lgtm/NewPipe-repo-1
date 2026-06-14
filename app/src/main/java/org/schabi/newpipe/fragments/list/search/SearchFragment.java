@@ -886,14 +886,42 @@ public class SearchFragment extends BaseListFragment<SearchInfo, ListExtractor.I
         if (searchDisposable != null) {
             searchDisposable.dispose();
         }
+
+        // Capture the current query to detect stale results. When the user triggers a
+        // new search before the previous response arrives, the old result may still be
+        // delivered via the main-thread handler queue. We compare these captured values
+        // inside handleResult/onItemError and discard the result if the query has changed.
+        final String currentQuery = searchString;
+        final int currentServiceId = serviceId;
+
         searchDisposable = ExtractorHelper.searchFor(serviceId,
                 searchString,
                 Arrays.asList(contentFilter),
                 sortFilter)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .doOnEvent((searchResult, throwable) -> isLoading.set(false))
-                .subscribe(this::handleResult, this::onItemError);
+                .subscribe(
+                        result -> {
+                            // Discard stale result if the query changed while this
+                            // request was in flight (e.g. rapid keyword switching).
+                            // isLoading must NOT be set to false here, because the new
+                            // search is still loading.
+                            if (!currentQuery.equals(searchString)
+                                    || currentServiceId != serviceId) {
+                                return;
+                            }
+                            isLoading.set(false);
+                            handleResult(result);
+                        },
+                        throwable -> {
+                            // Discard stale error if the query changed.
+                            if (!currentQuery.equals(searchString)
+                                    || currentServiceId != serviceId) {
+                                return;
+                            }
+                            isLoading.set(false);
+                            onItemError(throwable);
+                        });
 
     }
 
@@ -907,6 +935,13 @@ public class SearchFragment extends BaseListFragment<SearchInfo, ListExtractor.I
         if (searchDisposable != null) {
             searchDisposable.dispose();
         }
+
+        // Capture the current query to detect stale results. If the user starts a new
+        // search while pagination is in flight, the old page result must be discarded
+        // to prevent appending stale items to the new query's list.
+        final String currentQuery = searchString;
+        final int currentServiceId = serviceId;
+
         searchDisposable = ExtractorHelper.getMoreSearchItems(
                 serviceId,
                 searchString,
@@ -915,8 +950,26 @@ public class SearchFragment extends BaseListFragment<SearchInfo, ListExtractor.I
                 nextPage)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .doOnEvent((nextItemsResult, throwable) -> isLoading.set(false))
-                .subscribe(this::handleNextItems, this::onItemError);
+                .subscribe(
+                        result -> {
+                            // Discard stale pagination result if a new search was started
+                            // while this page was loading.
+                            if (!currentQuery.equals(searchString)
+                                    || currentServiceId != serviceId) {
+                                return;
+                            }
+                            isLoading.set(false);
+                            handleNextItems(result);
+                        },
+                        throwable -> {
+                            // Discard stale pagination error.
+                            if (!currentQuery.equals(searchString)
+                                    || currentServiceId != serviceId) {
+                                return;
+                            }
+                            isLoading.set(false);
+                            onItemError(throwable);
+                        });
     }
 
     @Override
@@ -930,6 +983,15 @@ public class SearchFragment extends BaseListFragment<SearchInfo, ListExtractor.I
         hideKeyboardSearch();
     }
 
+    /**
+     * Handle errors from search or pagination requests.
+     * <p>
+     * Note: Staleness checks (to discard errors from outdated queries) are performed
+     * in the subscribe lambdas of {@link #startLoading(boolean)} and {@link #loadMoreItems()}
+     * before this method is called.
+     *
+     * @param exception the error thrown by the request
+     */
     private void onItemError(final Throwable exception) {
         if (exception instanceof SearchExtractor.NothingFoundException) {
             infoListAdapter.clearStreamItemList();
