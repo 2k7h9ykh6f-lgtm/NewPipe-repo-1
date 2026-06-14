@@ -80,7 +80,7 @@ public class AudioPlaybackResolver implements PlaybackResolver {
                     dataSource, stream, info, PlaybackResolver.cacheKeyOf(info, stream), tag);
         } catch (final ResolverException e) {
             Log.e(TAG, "Unable to create audio source", e);
-            return null;
+            throw new ResolverRuntimeException(e);
         }
     }
 

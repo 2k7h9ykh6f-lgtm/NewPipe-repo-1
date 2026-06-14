@@ -325,7 +325,8 @@ public interface PlaybackResolver extends Resolver<StreamInfo, MediaSource> {
                             .build());
         } catch (final IOException e) {
             throw new ResolverException(
-                    "Could not create a DASH media source/manifest from the manifest text", e);
+                    "Could not create a DASH media source/manifest from the manifest text",
+                    ErrorSource.MEDIA_PARSING, e);
         }
     }
 
@@ -386,7 +387,8 @@ public interface PlaybackResolver extends Resolver<StreamInfo, MediaSource> {
             smoothStreamingManifest = new SsManifestParser().parse(manifestUri,
                     smoothStreamingManifestInput);
         } catch (final IOException e) {
-            throw new ResolverException("Error when parsing manual SS manifest", e);
+            throw new ResolverException("Error when parsing manual SS manifest",
+                    ErrorSource.MEDIA_PARSING, e);
         }
 
         return dataSource.getSSMediaSourceFactory().createMediaSource(
@@ -434,7 +436,8 @@ public interface PlaybackResolver extends Resolver<StreamInfo, MediaSource> {
                         metadata);
             } catch (final CreationException | IOException | NullPointerException e) {
                 throw new ResolverException(
-                        "Error when generating the DASH manifest of YouTube ended live stream", e);
+                        "Error when generating the DASH manifest of YouTube ended live stream",
+                        ErrorSource.MEDIA_PARSING, e);
             }
         } else {
             throw new ResolverException(
@@ -492,7 +495,8 @@ public interface PlaybackResolver extends Resolver<StreamInfo, MediaSource> {
                     Log.e(TAG,
                             "Error when generating the DASH manifest of YouTube OTF stream", e);
                     throw new ResolverException(
-                            "Error when generating the DASH manifest of YouTube OTF stream", e);
+                            "Error when generating the DASH manifest of YouTube OTF stream",
+                            ErrorSource.MEDIA_PARSING, e);
                 }
             case HLS:
                 return dataSource.getYoutubeHlsMediaSourceFactory().createMediaSource(
@@ -553,13 +557,62 @@ public interface PlaybackResolver extends Resolver<StreamInfo, MediaSource> {
 
 
     //region Resolver exception
+
+    /**
+     * Categorizes why a {@link ResolverException} occurred, so that a playback failure can be
+     * reported to the user with a more specific message.
+     */
+    enum ErrorSource {
+        /** The media content (e.g. a DASH/SS manifest) could not be parsed or generated. */
+        MEDIA_PARSING,
+        /** The failure was caused by a network problem. */
+        NETWORK,
+        /** The player could not be set up for this content (e.g. unsupported format or no URL). */
+        PLAYER_INITIALIZATION
+    }
+
     final class ResolverException extends Exception {
+        private final ErrorSource errorSource;
+
         public ResolverException(final String message) {
-            super(message);
+            this(message, ErrorSource.PLAYER_INITIALIZATION);
         }
 
         public ResolverException(final String message, final Throwable cause) {
+            this(message, ErrorSource.PLAYER_INITIALIZATION, cause);
+        }
+
+        public ResolverException(final String message, final ErrorSource errorSource) {
+            super(message);
+            this.errorSource = errorSource;
+        }
+
+        public ResolverException(final String message, final ErrorSource errorSource,
+                                 final Throwable cause) {
             super(message, cause);
+            this.errorSource = errorSource;
+        }
+
+        public ErrorSource getErrorSource() {
+            return errorSource;
+        }
+    }
+
+    /**
+     * Unchecked wrapper around {@link ResolverException} used to propagate a resolution failure
+     * (together with its {@link ErrorSource}) out of {@link Resolver#resolve(Object)}, which cannot
+     * declare checked exceptions.
+     */
+    final class ResolverRuntimeException extends RuntimeException {
+        private final ErrorSource errorSource;
+
+        public ResolverRuntimeException(final ResolverException cause) {
+            super(cause.getMessage(), cause);
+            this.errorSource = cause.getErrorSource();
+        }
+
+        public ErrorSource getErrorSource() {
+            return errorSource;
         }
     }
     //endregion

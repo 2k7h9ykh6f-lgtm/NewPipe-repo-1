@@ -108,7 +108,7 @@ public class VideoPlaybackResolver implements PlaybackResolver {
                 mediaSources.add(streamSource);
             } catch (final ResolverException e) {
                 Log.e(TAG, "Unable to create video source", e);
-                return null;
+                throw new ResolverRuntimeException(e);
             }
         }
 
@@ -122,7 +122,7 @@ public class VideoPlaybackResolver implements PlaybackResolver {
                 streamSourceType = SourceType.VIDEO_WITH_SEPARATED_AUDIO;
             } catch (final ResolverException e) {
                 Log.e(TAG, "Unable to create audio source", e);
-                return null;
+                throw new ResolverRuntimeException(e);
             }
         } else {
             streamSourceType = SourceType.VIDEO_WITH_AUDIO_OR_AUDIO_ONLY;

@@ -21,6 +21,7 @@ import org.schabi.newpipe.player.playqueue.PlayQueueEvent.MoveEvent;
 import org.schabi.newpipe.player.playqueue.PlayQueueEvent;
 import org.schabi.newpipe.player.playqueue.PlayQueueEvent.RemoveEvent;
 import org.schabi.newpipe.player.playqueue.PlayQueueEvent.ReorderEvent;
+import org.schabi.newpipe.player.resolver.PlaybackResolver;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -444,6 +445,12 @@ public class MediaSourceManager {
                         })
                 )
                 .onErrorReturn(throwable -> {
+                    if (throwable instanceof PlaybackResolver.ResolverRuntimeException) {
+                        final PlaybackResolver.ResolverRuntimeException resolverError =
+                                (PlaybackResolver.ResolverRuntimeException) throwable;
+                        return FailedMediaSource.of(stream, new MediaSourceResolutionException(
+                                resolverError.getMessage(), resolverError.getErrorSource()));
+                    }
                     if (throwable instanceof ExtractionException) {
                         return FailedMediaSource.of(stream, new StreamInfoLoadException(throwable));
                     }

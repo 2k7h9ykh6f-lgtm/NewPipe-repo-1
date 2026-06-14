@@ -10,6 +10,8 @@ import org.junit.runner.RunWith;
 import org.schabi.newpipe.R;
 import org.schabi.newpipe.extractor.ServiceList;
 import org.schabi.newpipe.extractor.exceptions.ParsingException;
+import org.schabi.newpipe.player.mediasource.FailedMediaSource.MediaSourceResolutionException;
+import org.schabi.newpipe.player.resolver.PlaybackResolver.ErrorSource;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -58,5 +60,22 @@ public class ErrorInfoTest {
         assertEquals(R.string.parsing_error, getMessageFromErrorInfo(infoFromParcel));
 
         parcel.recycle();
+    }
+
+    @Test
+    public void mediaSourceResolutionErrorMessages()
+            throws NoSuchFieldException, IllegalAccessException {
+        assertEquals(R.string.player_media_parsing_failure,
+                getMessageFromErrorInfo(errorInfoFor(ErrorSource.MEDIA_PARSING)));
+        assertEquals(R.string.network_error,
+                getMessageFromErrorInfo(errorInfoFor(ErrorSource.NETWORK)));
+        assertEquals(R.string.player_initialization_failure,
+                getMessageFromErrorInfo(errorInfoFor(ErrorSource.PLAYER_INITIALIZATION)));
+    }
+
+    private static ErrorInfo errorInfoFor(final ErrorSource errorSource) {
+        return new ErrorInfo(
+                new MediaSourceResolutionException("test failure", errorSource),
+                UserAction.USER_REPORT, "request", ServiceList.YouTube.getServiceId());
     }
 }

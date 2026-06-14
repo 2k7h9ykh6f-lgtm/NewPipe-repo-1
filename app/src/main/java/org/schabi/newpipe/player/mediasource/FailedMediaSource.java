@@ -14,6 +14,7 @@ import com.google.android.exoplayer2.upstream.TransferListener;
 
 import org.schabi.newpipe.player.mediaitem.ExceptionTag;
 import org.schabi.newpipe.player.playqueue.PlayQueueItem;
+import org.schabi.newpipe.player.resolver.PlaybackResolver.ErrorSource;
 
 import java.io.IOException;
 import java.util.List;
@@ -179,8 +180,19 @@ public class FailedMediaSource extends BaseMediaSource implements ManagedMediaSo
     }
 
     public static final class MediaSourceResolutionException extends FailedMediaSourceException {
+        private final ErrorSource errorSource;
+
         public MediaSourceResolutionException(final String message) {
+            this(message, ErrorSource.PLAYER_INITIALIZATION);
+        }
+
+        public MediaSourceResolutionException(final String message, final ErrorSource source) {
             super(message);
+            this.errorSource = source;
+        }
+
+        public ErrorSource getErrorSource() {
+            return errorSource;
         }
     }
 

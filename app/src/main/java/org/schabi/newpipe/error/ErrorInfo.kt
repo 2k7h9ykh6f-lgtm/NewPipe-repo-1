@@ -28,7 +28,9 @@ import org.schabi.newpipe.extractor.exceptions.UnsupportedContentInCountryExcept
 import org.schabi.newpipe.extractor.exceptions.YoutubeMusicPremiumContentException
 import org.schabi.newpipe.ktx.isNetworkRelated
 import org.schabi.newpipe.player.mediasource.FailedMediaSource
+import org.schabi.newpipe.player.mediasource.FailedMediaSource.MediaSourceResolutionException
 import org.schabi.newpipe.player.resolver.PlaybackResolver
+import org.schabi.newpipe.player.resolver.PlaybackResolver.ErrorSource
 import org.schabi.newpipe.util.text.getText
 
 /**
@@ -210,11 +212,14 @@ class ErrorInfo private constructor(
                     }
                 }
 
+                throwable is MediaSourceResolutionException ->
+                    errorSourceMessage(throwable.errorSource)
+
                 throwable is FailedMediaSource.FailedMediaSourceException ->
                     getMessage(throwable.cause, action, serviceId)
 
                 throwable is PlaybackResolver.ResolverException ->
-                    ErrorMessage(R.string.player_stream_failure)
+                    errorSourceMessage(throwable.errorSource)
 
                 // content not available exceptions
                 throwable is AccountTerminatedException ->
@@ -300,6 +305,14 @@ class ErrorInfo private constructor(
                     ErrorMessage(R.string.error_snackbar_message)
             }
         }
+
+        private fun errorSourceMessage(errorSource: ErrorSource): ErrorMessage =
+            when (errorSource) {
+                ErrorSource.MEDIA_PARSING -> ErrorMessage(R.string.player_media_parsing_failure)
+                ErrorSource.NETWORK -> ErrorMessage(R.string.network_error)
+                ErrorSource.PLAYER_INITIALIZATION ->
+                    ErrorMessage(R.string.player_initialization_failure)
+            }
 
         fun isReportable(throwable: Throwable?): Boolean {
             return when (throwable) {
