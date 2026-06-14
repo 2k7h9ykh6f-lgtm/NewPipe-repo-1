@@ -886,15 +886,32 @@ public class SearchFragment extends BaseListFragment<SearchInfo, ListExtractor.I
         if (searchDisposable != null) {
             searchDisposable.dispose();
         }
+        // Stamp this request so a slow response cannot overwrite a newer query's results: the
+        // RxJava subscription is disposed below on every new search, but observeOn's main-thread
+        // delivery can race past dispose(), so we also verify the result still matches on arrival.
+        final SearchRequestKey requestKey =
+                new SearchRequestKey(serviceId, searchString, contentFilter, sortFilter);
         searchDisposable = ExtractorHelper.searchFor(serviceId,
                 searchString,
                 Arrays.asList(contentFilter),
                 sortFilter)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .doOnEvent((searchResult, throwable) -> isLoading.set(false))
-                .subscribe(this::handleResult, this::onItemError);
-
+                .subscribe(
+                        searchResult -> {
+                            if (isStaleResult(requestKey)) {
+                                return;
+                            }
+                            isLoading.set(false);
+                            handleResult(searchResult);
+                        },
+                        throwable -> {
+                            if (isStaleResult(requestKey)) {
+                                return;
+                            }
+                            isLoading.set(false);
+                            onItemError(throwable);
+                        });
     }
 
     @Override
@@ -907,6 +924,8 @@ public class SearchFragment extends BaseListFragment<SearchInfo, ListExtractor.I
         if (searchDisposable != null) {
             searchDisposable.dispose();
         }
+        final SearchRequestKey requestKey =
+                new SearchRequestKey(serviceId, searchString, contentFilter, sortFilter);
         searchDisposable = ExtractorHelper.getMoreSearchItems(
                 serviceId,
                 searchString,
@@ -915,8 +934,39 @@ public class SearchFragment extends BaseListFragment<SearchInfo, ListExtractor.I
                 nextPage)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .doOnEvent((nextItemsResult, throwable) -> isLoading.set(false))
-                .subscribe(this::handleNextItems, this::onItemError);
+                .subscribe(
+                        nextItemsResult -> {
+                            if (isStaleResult(requestKey)) {
+                                return;
+                            }
+                            isLoading.set(false);
+                            handleNextItems(nextItemsResult);
+                        },
+                        throwable -> {
+                            if (isStaleResult(requestKey)) {
+                                return;
+                            }
+                            isLoading.set(false);
+                            onItemError(throwable);
+                        });
+    }
+
+    /**
+     * Checks whether a (now delivered) request no longer matches the current query, service or
+     * filter, i.e. the user has moved on since it was issued. Such results must be discarded so
+     * they cannot overwrite the list belonging to the current query.
+     *
+     * @param requestKey the key captured when the request was started
+     * @return {@code true} if the result is stale and should be ignored
+     */
+    private boolean isStaleResult(@NonNull final SearchRequestKey requestKey) {
+        final boolean stale = !requestKey.equals(
+                new SearchRequestKey(serviceId, searchString, contentFilter, sortFilter));
+        if (stale && DEBUG) {
+            Log.d(TAG, "Discarding stale search result for " + requestKey
+                    + ", current query is \"" + searchString + "\"");
+        }
+        return stale;
     }
 
     @Override
